@@ -2,21 +2,28 @@
 
 /**
  * Class DatabaseDiff - класс для вычисления расхождения баз данных
- *
  * Проверяется расхождение в схемах, таблицах, столбцах и типах данных столбцов
  */
 class DatabaseDiff
 {
-    // подключение к БД сервера Master
+    /**
+     * Подключение к БД сервера Master
+     *
+     * @var bool|resource
+     */
     private $masterServerDBConnection = false;
-    // подключение к БД сервера Slave
+    /**
+     * Подключение к БД сервера Slave
+     *
+     * @var bool|resource
+     */
     private $slaveServerDBConnection = false;
 
     /**
      * Конструктор
      *
-     * @param array $masterServerOptions - параметры сервера Master
-     * @param array $slaveServerOptions - параметры сервера Slave
+     * @param array $masterServerOptions Параметры сервера Master
+     * @param array $slaveServerOptions  Параметры сервера Slave
      */
     public function __construct(array $masterServerOptions, array $slaveServerOptions)
     {
@@ -29,8 +36,8 @@ class DatabaseDiff
     /**
      * Подключение к БД
      *
-     * @param string $serverType - тип сервера
-     * @param array $serverOptions - параметры сервера
+     * @param string $serverType    Тип сервера
+     * @param array  $serverOptions Параметры сервера
      * @return boolean
      */
     private function connectToDatabase(string $serverType, array $serverOptions): bool
@@ -38,6 +45,8 @@ class DatabaseDiff
         $res = false;
 
         if (empty($serverType) || empty($serverOptions)) return $res;
+
+        $dbConnectionString = '';
 
         if (
             !empty($serverOptions['ip'])
@@ -55,24 +64,18 @@ class DatabaseDiff
                 'password=' . $serverOptions['dbUserPassword'] . ' ';
         }
 
+        if (empty($dbConnectionString)) return $res;
+
         switch ($serverType) {
-
             case 'master':
-
                 // подключение к БД сервера Master
                 $this->masterServerDBConnection = pg_connect($dbConnectionString);
-
                 if ($this->masterServerDBConnection !== false) $res = true;
-
                 break;
-
             case 'slave':
-
                 // подключение к БД сервера Slave
                 $this->slaveServerDBConnection = pg_connect($dbConnectionString);
-
                 if ($this->slaveServerDBConnection !== false) $res = true;
-
                 break;
         }
 
@@ -87,18 +90,36 @@ class DatabaseDiff
     public function execute(): array
     {
         $res = [
-            'result'    => 0,
-            'data'      => [],
-            'messages'  => [
+            'result'   => 0,
+            'data'     => [],
+            'messages' => [
                 'info'  => [],
                 'error' => []
             ]
         ];
 
         // проверка соединения с БД сервера Master
-        if (!$this->masterServerDBConnection) return ['result' => 0, 'data' => [], 'messages' => ['info' => [], 'error' => ['Ошибка при подключении к БД сервера Master']]];
+        if (!$this->masterServerDBConnection) {
+            return [
+                'result'   => 0,
+                'data'     => [],
+                'messages' => [
+                    'info'  => [],
+                    'error' => ['Ошибка при подключении к БД сервера Master']
+                ]
+            ];
+        }
         // проверка соединения с БД сервера Slave
-        if (!$this->slaveServerDBConnection) return ['result' => 0, 'data' => [], 'messages' => ['info' => [], 'error' => ['Ошибка при подключении к БД сервера Slave']]];
+        if (!$this->slaveServerDBConnection) {
+            return [
+                'result'   => 0,
+                'data'     => [],
+                'messages' => [
+                    'info'  => [],
+                    'error' => ['Ошибка при подключении к БД сервера Slave']
+                ]
+            ];
+        }
 
         $res['result'] = 1;
 
@@ -108,9 +129,15 @@ class DatabaseDiff
         $slaveServerDBStructure = $this->getDatabaseStructure($this->slaveServerDBConnection);
 
         // получение расхождения баз данных
-        $res['data']['notExistOnMasterServerDB'] = $this->getDatabaseDiff($slaveServerDBStructure, $masterServerDBStructure);
+        $res['data']['notExistOnMasterServerDB'] = $this->getDatabaseDiff(
+            $slaveServerDBStructure,
+            $masterServerDBStructure
+        );
         // получение расхождения баз данных
-        $res['data']['notExistOnSlaveServerDB'] = $this->getDatabaseDiff($masterServerDBStructure, $slaveServerDBStructure);
+        $res['data']['notExistOnSlaveServerDB'] = $this->getDatabaseDiff(
+            $masterServerDBStructure,
+            $slaveServerDBStructure
+        );
 
         return $res;
     }
@@ -118,7 +145,7 @@ class DatabaseDiff
     /**
      * Получение структуры базы данных
      *
-     * @param resource $dbConnection - подключение к БД
+     * @param resource $dbConnection Подключение к БД
      * @return array
      */
     private function getDatabaseStructure($dbConnection): array
@@ -127,36 +154,42 @@ class DatabaseDiff
 
         if (empty($dbConnection) || !is_resource($dbConnection)) return $res;
 
-        $request = "SELECT
-                            t_columns.table_schema,
-                            t_columns.table_name,
-                            t_columns.column_name,
-                            CASE
-                                WHEN t_columns.character_maximum_length IS NOT NULL 
-                                    THEN t_columns.data_type || '(' || t_columns.character_maximum_length || ')'
-                                ELSE t_columns.data_type
-                            END AS data_type
-                        FROM pg_tables AS t_tables
-                        LEFT JOIN information_schema.columns AS t_columns
-                            ON t_tables.schemaname = t_columns.table_schema
-                                AND t_tables.tablename = t_columns.table_name
-                        WHERE t_columns.table_schema NOT IN (
-                                'information_schema',
-                                'pg_catalog'
-                            )
-                        ORDER BY t_columns.table_schema, t_columns.table_name, t_columns.column_name;";
+        $request = "
+            SELECT
+                t_columns.table_schema,
+                t_columns.table_name,
+                t_columns.column_name,
+                CASE
+                    WHEN t_columns.character_maximum_length IS NOT NULL 
+                        THEN t_columns.data_type || '(' || t_columns.character_maximum_length || ')'
+                    ELSE t_columns.data_type
+                END AS data_type
+            FROM pg_tables AS t_tables
+            LEFT JOIN information_schema.columns AS t_columns
+                      ON t_tables.schemaname = t_columns.table_schema
+                          AND t_tables.tablename = t_columns.table_name
+            WHERE
+                t_columns.table_schema NOT IN (
+                    'information_schema',
+                    'pg_catalog'
+                )
+            ORDER BY
+                t_columns.table_schema,
+                t_columns.table_name,
+                t_columns.column_name;";
 
         $result = pg_query($dbConnection, $request);
 
         if (!$result) return $res;
 
         while ($row = pg_fetch_assoc($result)) {
-
-            if (!array_key_exists($row['table_schema'], $res))
+            if (!array_key_exists($row['table_schema'], $res)) {
                 $res[$row['table_schema']] = [];
+            }
 
-            if (!array_key_exists($row['table_name'], $res[$row['table_schema']]))
+            if (!array_key_exists($row['table_name'], $res[$row['table_schema']])) {
                 $res[$row['table_schema']][$row['table_name']] = [];
+            }
 
             $res[$row['table_schema']][$row['table_name']][$row['column_name']] = $row['data_type'];
         }
@@ -167,17 +200,17 @@ class DatabaseDiff
     /**
      * Получение расхождения баз данных
      *
-     * @param array $firstDBStructure - структура первой БД
-     * @param array $secondDBStructure - структура второй БД
+     * @param array $firstDBStructure  Структура первой БД
+     * @param array $secondDBStructure Структура второй БД
      * @return array
      */
     private function getDatabaseDiff(array $firstDBStructure, array $secondDBStructure): array
     {
         $res = [
-            'schemas'                   => [],
-            'tables'                    => [],
-            'columns'                   => [],
-            'columnsWithDiffDataType'   => []
+            'schemas'                 => [],
+            'tables'                  => [],
+            'columns'                 => [],
+            'columnsWithDiffDataType' => []
         ];
 
         if (empty($firstDBStructure) || empty($secondDBStructure)) return $res;
@@ -187,7 +220,7 @@ class DatabaseDiff
 
         foreach ($firstDBStructure as $firstDBSchema => $firstDBTables) {
 
-            if (in_array($firstDBSchema, $res['schemas'])) continue;
+            if (in_array($firstDBSchema, $res['schemas'], true)) continue;
 
             // получение расхождения таблиц БД
             $dbTablesDiff = $this->getDBTablesDiff($firstDBSchema, $firstDBTables, $secondDBStructure[$firstDBSchema]);
@@ -196,20 +229,32 @@ class DatabaseDiff
 
             foreach ($firstDBTables as $firstDBTable => $firstDBColumns) {
 
-                if (in_array($firstDBSchema . '.' . $firstDBTable, $res['tables'])) continue;
+                if (in_array($firstDBSchema . '.' . $firstDBTable, $res['tables'], true)) continue;
 
                 // получение расхождения столбцов БД
-                $dbColumnsDiff = $this->getDBColumnsDiff($firstDBSchema, $firstDBTable, $firstDBColumns, $secondDBStructure[$firstDBSchema][$firstDBTable]);
+                $dbColumnsDiff = $this->getDBColumnsDiff(
+                    $firstDBSchema,
+                    $firstDBTable,
+                    $firstDBColumns,
+                    $secondDBStructure[$firstDBSchema][$firstDBTable]
+                );
 
                 $res['columns'] = array_merge($res['columns'], $dbColumnsDiff);
 
                 foreach ($firstDBColumns as $firstDBColumn => $firstDBColumnDataType) {
 
-                    if (in_array($firstDBSchema . '.' . $firstDBTable . '.' . $firstDBColumn, $res['columns'])) continue;
+                    if (
+                        in_array(
+                            $firstDBSchema . '.' . $firstDBTable . '.' . $firstDBColumn,
+                            $res['columns'],
+                            true
+                        )
+                    ) {
+                        continue;
+                    }
 
                     // // получение расхождения типов данных столбцов БД
                     if ($firstDBColumnDataType !== $secondDBStructure[$firstDBSchema][$firstDBTable][$firstDBColumn]) {
-
                         $res['columnsWithDiffDataType'][] = $firstDBSchema . '.' . $firstDBTable . '.' . $firstDBColumn .
                             ' (' . $firstDBColumnDataType . ' != ' . $secondDBStructure[$firstDBSchema][$firstDBTable][$firstDBColumn] . ')';
                     }
@@ -223,8 +268,8 @@ class DatabaseDiff
     /**
      * Получение расхождения схем БД
      *
-     * @param array $firstDBStructure - структура первой БД
-     * @param array $secondDBStructure - структура второй БД
+     * @param array $firstDBStructure  Структура первой БД
+     * @param array $secondDBStructure Структура второй БД
      * @return array
      */
     private function getDBSchemasDiff(array $firstDBStructure, array $secondDBStructure): array
@@ -244,9 +289,9 @@ class DatabaseDiff
     /**
      * Получение расхождения таблиц БД
      *
-     * @param string $firstDBSchema - схема первой БД
-     * @param array $firstDBTables - таблицы первой БД
-     * @param array $secondDBTables - таблицы второй БД
+     * @param string $firstDBSchema  Схема первой БД
+     * @param array  $firstDBTables  Таблицы первой БД
+     * @param array  $secondDBTables Таблицы второй БД
      * @return array
      */
     private function getDBTablesDiff(string $firstDBSchema, array $firstDBTables, array $secondDBTables): array
@@ -261,7 +306,6 @@ class DatabaseDiff
         $res = array_values(array_diff($firstDBTablesArr, $secondDBTablesArr));
 
         foreach ($res as &$tableName) {
-
             $tableName = $firstDBSchema . '.' . $tableName;
         }
 
@@ -271,14 +315,18 @@ class DatabaseDiff
     /**
      * Получение расхождения столбцов БД
      *
-     * @param string $firstDBSchema - схема первой БД
-     * @param string $firstDBTable - таблица первой БД
-     * @param array $firstDBColumns - столбцы первой БД
-     * @param array $secondDBColumns - столбцы второй БД
+     * @param string $firstDBSchema   Схема первой БД
+     * @param string $firstDBTable    Таблица первой БД
+     * @param array  $firstDBColumns  Столбцы первой БД
+     * @param array  $secondDBColumns Столбцы второй БД
      * @return array
      */
-    private function getDBColumnsDiff(string $firstDBSchema, string $firstDBTable, array $firstDBColumns, array $secondDBColumns): array
-    {
+    private function getDBColumnsDiff(
+        string $firstDBSchema,
+        string $firstDBTable,
+        array $firstDBColumns,
+        array $secondDBColumns
+    ): array {
         $res = [];
 
         if (empty($firstDBSchema) || empty($firstDBTable) || empty($firstDBColumns) || empty($secondDBColumns)) return $res;
@@ -289,7 +337,6 @@ class DatabaseDiff
         $res = array_values(array_diff($firstDBColumnsArr, $secondDBColumnsArr));
 
         foreach ($res as &$columnName) {
-
             $columnName = $firstDBSchema . '.' . $firstDBTable . '.' . $columnName;
         }
 
